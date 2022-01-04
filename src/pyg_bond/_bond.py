@@ -8,8 +8,8 @@ def is_num(value):
 
 def aus_bill_pv(quote, tenor = 90, facevalue = 100, daycount = 365):
     """
-	converts ausralian accepted bank bills quote of (100-yld) into a price
-    See https://www.asx.com.au/documents/products/ird-pricing-guide.pdf
+	converts ausralian accepted bank bills quote as (100-yld) into a price.
+    See https://www.asx.com.au/documents/products/ird-pricing-guide.pdf for full implementaion
     """
     yld = 1 - quote/100
     discount_factor = 1/(1 + tenor * yld / daycount)
@@ -19,6 +19,8 @@ def aus_bill_pv(quote, tenor = 90, facevalue = 100, daycount = 365):
 
 def _bond_pv_and_duration(yld, tenor, coupon = 0.05, freq = 2):
     """
+    
+    Given yield and cash flows (coupon, tenor and freq), we calculate pv and duration.
     We expects the yield and the coupons to be quoted as actual values rather than in percentages
 
     :Present Value calculation:
@@ -59,7 +61,7 @@ def _bond_pv_and_duration(yld, tenor, coupon = 0.05, freq = 2):
     if is_num(yld) and yld == 0:
         pv = 1 + n * c
         duration = tenor + c*n*(n+1)/(2*freq)
-        return 1 + n * c
+        return pv, duration
     f = 1/(1 + yld/freq)
     dfy = f**2 / freq ## we ignore the negative sign
     fn1 = f ** (n-1)    
@@ -83,6 +85,26 @@ def bond_pv(yld, tenor, coupon = 0.06, freq = 2):
 bond_pv.__doc__ = _bond_pv_and_duration.__doc__
 
 def bond_duration(yld, tenor, coupon = 0.06, freq = 2):
+    """
+	
+	bond_duration calculates duration (sensitivity to yield change).
+	
+    Parameters
+    ----------
+    yld: float/array
+        yield of bond
+    tenor : int
+        tenor of a bond.
+    coupon : float, optional
+        coupon of a bond. The default is 0.06.
+    freq : int, optional
+        number of coupon payments per year. The default is 2.
+
+    Returns
+    -------
+    duration: number/array
+        the duration of the bond
+    """
     pv, duration = _bond_pv_and_duration(yld, tenor, coupon = coupon, freq = freq)
     return duration
 
@@ -91,14 +113,32 @@ bond_duration.__doc__ = _bond_pv_and_duration.__doc__
 
 def aus_bond_pv(quote, tenor, coupon = 0.06, freq = 2, facevalue = 100):
     """
+    
+    Australian bond futures are quoted as 100-yield. Here we calculate their actual price. See:
     https://www.asx.com.au/documents/products/ird-pricing-guide.pdf
     
-    assert aus_bond_pv(100, 10) == 100
-    assert aus_bond_pv(98, 10) == 1.6e5
-    quote = 95.505
-    assert round(aus_bond_pv(quote, 3),2) ==  104180.09
+    :Parameters:
+    ------------
+    quote: float/timeseries
+        quote of aus bond future
     
-    assert round(aus_bond_pv(95.500, 10),2) == 111972.78
+    tenor: int
+        usually 3 or 10-year bonds
+    
+    coupon: float
+        bond future coupon, default is 6%
+
+    freq: int
+        aussie bonds pay twice a year        
+    
+    :Examples:
+    -----------
+    >>> assert aus_bond_pv(100, 10) == 160 # yld = 0 so price is notional + 10 6% coupons
+    >>> assert abs(aus_bond_pv(98, 10, coupon = 0.02) - 100)<1e-6 # Here yield and coupon the same
+
+    >>> quote = 95.505
+    >>> assert round(aus_bond_pv(quote, 3),5) ==  104.18009    
+    >>> assert round(aus_bond_pv(95.500, 10),5) == 111.97278
 
     
     """
@@ -146,7 +186,7 @@ bond_yld_and_duration.output = ['yld', 'duration']
 def bond_yld(price, tenor, coupon = 0.06, freq = 2, iters = 5):
     """
 	
-	bond_yld_and_duration calculates yield from price iteratively using Newton Raphson gradient descent.
+	bond_yld calculates yield from price iteratively using Newton Raphson gradient descent.
 	
     We expect price to be quoted as per usual in market, i.e. 100 being par value. However, coupon and yield should be in fed actual values.
 
