@@ -210,3 +210,108 @@ def bond_yld(price, tenor, coupon = 0.06, freq = 2, iters = 5):
     """
     return bond_yld_and_duration(price, tenor, coupon = coupon, freq = freq, iters = iters)['yld']
 
+
+def bond_par_conversion_factor(yld, tenor, coupon = 0.06, freq = 2, invert = False):
+    """
+    This is an approximation, calculating the conversion factor for a par bond.
+    We are given a yield curve (yld) and we construct a par bond. 
+    The conversion factor is given by the value of the bond if interest rates were at 6% (coupon)
+    :Parameters:
+    ------------
+    yld: float/array/DataFrame
+        The yield of a bond
+    tenor: int
+        The maturity of the bond
+        
+    
+    :Example: simple calculation
+    ----------------------------
+    >>> import numpy as np; import pandas as pd
+    >>> from pyg_base import * 
+    >>> from pyg_bond import *
+
+    >>> yld = 0.023
+    >>> tenor = 7
+    >>> coupon = 0.06
+    >>> freq = 2
+    
+    :Example: working with a pandas object
+    --------------------------------------
+    
+    >>> yld = pd.Series(np.random.uniform(0,0.1,100), drange(-99))
+    >>> bond_par_conversion_factor(yld, 10)
+
+    :Example: working with a pandas objects with multiple expiries
+    -------------------------------------------------------------
+    >>> tenors = [7,8,9,10,11]
+    >>> yld_curve = pd.DataFrame(np.random.uniform(0,0.1,(100,5)), drange(-99), tenors)
+    >>> res = loop(pd.DataFrame)(bond_par_conversion_factor)(yld_curve, tenors)
+ 
+    :Example: the cheapest to deliver tenor for a flat yield curve:
+    --------------------------------------------------------------
+    >>> tenor =  [7,8,9,10,11]
+    >>> yld = [0.02] * 5
+    >>> loop(list)(bond_par_conversion_factor)(yld, tenor, invert = True)
+    >>> [1.2918585801399018, 1.3355093954613233, 1.3794440302478643, 1.423587848577121,1.4678647692438134]
+    >>> print('if yields are lower than 6% cheapest to deliver is the 7-year par bond')
+
+    >>> yld = [0.08] * 5
+    >>> loop(list)(bond_par_conversion_factor)(yld, tenor, invert = True)
+    >>> [0.8985042974046984, 0.8884063695192392, 0.8790937290011396, 0.8704926716179342, 0.862538032755245]
+    >>> print('if yields are higher than 6% cheapest to deliver is the 11-year par bond')
+    """
+    res = bond_pv(coupon, tenor, coupon = yld, freq = freq)
+    return 1/res if invert else res
+
+def bond_ctd(tenor2yld, coupon = 0.06, freq = 2):
+    """
+    returns yld, tenor and future price of a CTD future with multiple yields
+    
+    Parameters
+    ----------
+    tenor2yld : dict
+        mapping from tenor in years (int) to yield timeseries
+    coupon : float, optional
+        The coupon for the future. The default is 0.06.
+    freq : int, optional
+        payment frequency per year. The default is 2.
+
+    Returns
+    -------
+    pd.DataFrame 
+        with three columns: tenor, yld, price
+
+    :Example:
+    ---------
+    >>> y7 = pd.Series([0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.071], drange(-7))
+    >>> y10 = pd.Series([0.02, 0.03, 0.04, 0.05, 0.06, 0.07], drange(-6,-1))
+    >>> tenor2yld = {7 : y7, 10: y10}
+
+    >>>              yld  tenor     price
+    >>> 2022-01-11  0.01      7  1.393538
+    >>> 2022-01-12  0.02      7  1.291859
+    >>> 2022-01-13  0.03      7  1.204009
+    >>> 2022-01-14  0.04      7  1.127346
+    >>> 2022-01-15  0.05      7  1.059861
+    >>> 2022-01-16  0.06     10  1.000000
+    >>> 2022-01-17  0.07     10  0.930763
+    >>> 2022-01-18  0.07     10  0.930763
+
+    """
+    tenors = list(tenor2yld.keys())
+    ylds = pd.concat(tenor2yld.values(), axis = 1).ffill()
+    cfs = [bond_par_conversion_factor(yld, tenor, coupon, freq, invert = True) for tenor, yld in tenor2yld.items()]
+    df = pd.concat(cfs, axis=1).ffill()
+    m = df.min(axis=1).values
+    mask = df.values == np.array([m]*len(cfs)).T
+    t = np.array([tenors] * len(df)) * mask
+    
+    ylds[~mask] = np.nan
+    df[~mask] = np.nan
+    yld = ylds.mean(axis=1)
+    tenor = pd.Series(np.amax(t, axis = 1), df.index)
+    res = dict(yld = yld, tenor = tenor, price = df.mean(axis=1))
+    return pd.DataFrame(res)
+    
+    
+    
