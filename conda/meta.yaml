@@ -1,6 +1,6 @@
 package:
     name: pyg-bond
-    version: 0.0.1
+    version: 0.0.2
 
 source:
     path: ../src
@@ -14,9 +14,11 @@ requirements:
     build:
         - numpy             >=1.19.1
         - pandas            >=1.1.0
+        - pyg-base          >=0.0.1
     run:
         - numpy             >=1.19.1
         - pandas            >=1.1.0
+        - pyg-base          >=0.0.1
 about:
     home: https://github.com/gityoav/pyg-bond
     license: GNU

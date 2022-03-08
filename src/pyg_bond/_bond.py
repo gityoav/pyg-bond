@@ -1,10 +1,9 @@
 import numpy as np
 import pandas as pd
+import datetime
+from pyg_base import is_num, pd2np
 
 __all__ = ['aus_bill_pv', 'bond_pv', 'bond_yld', 'bond_duration', 'aus_bond_pv', 'bond_yld_and_duration']
-
-def is_num(value):
-	return isinstance(value, (int, np.int64, np.int32, np.int16, np.int8, float, np.float16, np.float32, np.float64))
 
 def aus_bill_pv(quote, tenor = 90, facevalue = 100, daycount = 365):
     """
@@ -16,8 +15,8 @@ def aus_bill_pv(quote, tenor = 90, facevalue = 100, daycount = 365):
     pv = facevalue * discount_factor
     return pv 
 
-
-def _bond_pv_and_duration(yld, tenor, coupon = 0.05, freq = 2):
+@pd2np
+def _bond_pv_and_duration(yld, tenor, coupon = 0.06, freq = 2):
     """
     
     Given yield and cash flows (coupon, tenor and freq), we calculate pv and duration.
@@ -54,7 +53,7 @@ def _bond_pv_and_duration(yld, tenor, coupon = 0.05, freq = 2):
     dcoupon_dy/c = df/dy ( 1 + 2f + 3 f^2 ... + nf^(n-1)) 
                  = 1/freq * (1 + 2 +... n) ## since f = 1
                  = n(n+1)/(2 * freq)
-
+                 
     """
     n = tenor * freq
     c = coupon / freq
@@ -74,8 +73,10 @@ def _bond_pv_and_duration(yld, tenor, coupon = 0.05, freq = 2):
     duration =  dnotional_dy + dcoupon_dy
     if isinstance(yld, (pd.Series, pd.DataFrame, np.ndarray)):
         mask = yld == 0
-        pv[mask] = 1 + n * c
-        duration[mask] = tenor + c*n*(n+1)/(2*freq)
+        pv0 = 1 + n * c
+        duration0 = tenor + c*n*(n+1)/(2*freq)
+        pv[mask] = pv0 if is_num(pv0) else pv0[mask]
+        duration[mask] = duration0 if is_num(duration0) else duration0[mask]
     return pv, duration
 
 def bond_pv(yld, tenor, coupon = 0.06, freq = 2):
@@ -84,6 +85,12 @@ def bond_pv(yld, tenor, coupon = 0.06, freq = 2):
 
 bond_pv.__doc__ = _bond_pv_and_duration.__doc__
 
+def _tenor(tenor, yld):
+    if isinstance(tenor, datetime.datetime) and isinstance(yld, (pd.Series, pd.DataFrame)) and isinstance(yld.index, pd.DatetimeIndex):
+        return pd.Series((tenor - yld.index).days/365.25, yld.index)
+    else:
+        return tenor
+        
 def bond_duration(yld, tenor, coupon = 0.06, freq = 2):
     """
 	
@@ -105,7 +112,7 @@ def bond_duration(yld, tenor, coupon = 0.06, freq = 2):
     duration: number/array
         the duration of the bond
     """
-    pv, duration = _bond_pv_and_duration(yld, tenor, coupon = coupon, freq = freq)
+    pv, duration = _bond_pv_and_duration(yld, _tenor(tenor,yld), coupon = coupon, freq = freq)
     return duration
 
 bond_duration.__doc__ = _bond_pv_and_duration.__doc__
