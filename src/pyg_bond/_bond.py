@@ -392,8 +392,26 @@ def bond_total_return(price, coupon, funding):
     prc = nona(price)
     dcf = ts_gap(prc)/365. ## day count fraction, forward looking
     funding = df_reindex(funding, prc, method = ['ffil', 'bfill'])
-    carry = df_reindex(shift(mul_(coupon - funding, dcf)), price)    
+    carry = df_reindex(shift(mul_(coupon - funding, dcf)), price) ## accruals less funding costs
     rtn = diff(price)
     return add_(rtn, carry)
+    
+    
+def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1):
+    """
+    inflation linked bond clean price is quoted prior to notional multiplication and accrual
+    """
+    prc = nona(price)
+    dcf = ts_gap(prc)/365 ## day count fraction, forward looking
+    funding = df_reindex(funding, prc, method = ['ffil', 'bfill'])
+    notional = df_reindex(cpi / base_cpi, price, method = 'ffill')
+    if floor:
+        notional = np.maximum(floor, notional)
+
+    carry = df_reindex(shift(mul_([coupon - funding, dcf, notional])), price) ## ## accruals less funding costs on notional
+    pv = mul_(price, notional)
+    rtn = diff(pv)
+    return add_(rtn, carry)
+
     
     
