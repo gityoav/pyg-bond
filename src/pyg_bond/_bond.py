@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
 import datetime
-from pyg_base import is_num, pd2np
+from pyg_base import nona, is_num, pd2np, dt, df_reindex, loop, is_date, ts_gap, mul_, add_
+from pyg_timeseries import shift, diff
+
 
 __all__ = ['aus_bill_pv', 'bond_pv', 'bond_yld', 'bond_duration', 'aus_bond_pv', 'bond_yld_and_duration']
 
@@ -152,7 +154,31 @@ def aus_bond_pv(quote, tenor, coupon = 0.06, freq = 2, facevalue = 100):
     yld = 1 - quote / 100
     return facevalue * bond_pv(yld, tenor = tenor, coupon = coupon, freq = freq)
 
-def bond_yld_and_duration(price, tenor, coupon = 0.06, freq = 2, iters = 5):
+
+def bond_years_to_maturity(ts, maturity):
+    """
+    calculates years to maturity with part of the year calculated as ACT/365
+    
+    :Example:
+    ---------
+    >>> from pyg import *     
+    >>> ts = pd.Series(range(1000), drange(-999))
+    >>> maturity = dt('2Y')
+    >>> bond_years_to_maturity(ts, maturity)
+    
+    """
+    if len(ts) == 0:
+        return ts
+    t0 = ts.index[0]
+    years = list(range(2+maturity.year-t0.year))[::-1]
+    dates = [dt(maturity, f'-{y}y') for y in years]
+    y = df_reindex(pd.Series(years, dates), ts, method = 'bfill')
+    days = df_reindex(pd.Series(dates, dates), ts, method = 'bfill')
+    frac = pd.Series((days.values - days.index).days / 365, ts.index)
+    return y + frac
+
+    
+def _bond_yld_and_duration(price, tenor, coupon = 0.06, freq = 2, iters = 5):
     """
 	
 	bond_yld_and_duration calculates yield from price iteratively using Newton Raphson gradient descent.
@@ -188,7 +214,45 @@ def bond_yld_and_duration(price, tenor, coupon = 0.06, freq = 2, iters = 5):
         yld = yld + (pv - px) / duration
     return dict(yld = yld, duration = duration)
 
-bond_yld_and_duration.output = ['yld', 'duration']
+_bond_yld_and_duration.output = ['yld', 'duration']
+
+
+_bond_yld_and_duration_ = loop(pd.DataFrame)(_bond_yld_and_duration)
+
+
+def bond_yld_and_duration(price, maturity, coupon, freq = 2, iters = 5):
+    """
+    calculates both yield and duration from a maturity date or a tenor
+
+    Parameters
+    ----------
+    price : float/array
+        price of bond
+    maturity: int, date, array
+        if a date, will calculate 
+    coupon : float, optional
+        coupon of a bond. The default is 0.06.
+    freq : int, optional
+        number of coupon payments per year. The default is 2.
+    iters : int, optional
+        Number of iterations to find yield. The default is 5.
+
+    Returns
+    -------
+    res : TYPE
+        DESCRIPTION.
+
+    """
+    if is_date(maturity):
+        maturity = dt(maturity)
+        tenor = bond_years_to_maturity(price, maturity)
+    else:
+        tenor = maturity
+    return _bond_yld_and_duration_(price, tenor, coupon = coupon * 0.01, freq = freq, iters = iters)
+
+
+bond_yld_and_duration.output = _bond_yld_and_duration.output
+    
 
 def bond_yld(price, tenor, coupon = 0.06, freq = 2, iters = 5):
     """
@@ -320,5 +384,16 @@ def bond_ctd(tenor2yld, coupon = 0.06, freq = 2):
     res = dict(yld = yld, tenor = tenor, price = df.mean(axis=1))
     return pd.DataFrame(res)
     
+    
+def bond_total_return(price, coupon, funding):
+    """
+    price = pd.Series([1,np.nan,np.nan,2], [dt(-100),dt(-99),dt(-88), dt(0)])
+    """
+    prc = nona(price)
+    dcf = ts_gap(prc)/365. ## day count fraction, forward looking
+    funding = df_reindex(funding, prc, method = ['ffil', 'bfill'])
+    carry = df_reindex(shift(mul_(coupon - funding, dcf)), price)    
+    rtn = diff(price)
+    return add_(rtn, carry)
     
     
