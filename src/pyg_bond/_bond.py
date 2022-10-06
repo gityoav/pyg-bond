@@ -3,17 +3,7 @@ import pandas as pd
 import datetime
 from pyg_base import nona, is_num, pd2np, dt, df_reindex, loop, is_date, is_ts, ts_gap, mul_, add_
 from pyg_timeseries import shift, diff
-
-
-RATE_FMT = 1
-_rate_formats = {'%' : 100, 'bp': 10000, 1: 1, 100: 100, 10000: 10000}
-
-def _rate_format(rate_fmt = None):
-    if not rate_fmt:
-        return RATE_FMT
-    if rate_fmt not in _rate_formats:
-        raise ValueError(f'rate format must be in {_rate_formats}')
-    return _rate_formats[rate_fmt]
+from pyg_bond._base import rate_format, years_to_maturity
 
 __all__ = ['aus_bill_pv', 'bond_pv', 'bond_yld', 'bond_duration', 'aus_bond_pv', 'bond_yld_and_duration']
 
@@ -120,40 +110,11 @@ def bond_pv(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
         Bond present value.
 
     """
-    rate_fmt = _rate_format(rate_fmt)
+    rate_fmt = rate_format(rate_fmt)
     pv, duration = _bond_pv_and_duration(yld / rate_fmt, tenor, coupon = coupon / rate_fmt, freq = freq)
     return pv
 
 bond_pv.__doc__ = _bond_pv_and_duration.__doc__
-
-def bond_years_to_maturity(ts, maturity):
-    """
-    calculates years to maturity with part of the year calculated as ACT/365
-    
-    :Example:
-    ---------
-    >>> from pyg import *     
-    >>> ts = pd.Series(range(1000), drange(-999))
-    >>> maturity = dt('2Y')
-    >>> bond_years_to_maturity(ts, maturity)
-    
-    """
-    if len(ts) == 0:
-        return ts
-    t0 = ts.index[0]
-    years = list(range(2+maturity.year-t0.year))[::-1]
-    dates = [dt(maturity, f'-{y}y') for y in years]
-    y = df_reindex(pd.Series(years, dates), ts, method = 'bfill')
-    days = df_reindex(pd.Series(dates, dates), ts, method = 'bfill')
-    frac = pd.Series((days.values - days.index).days / 365, ts.index)
-    return y + frac
-
-
-def _tenor(tenor, yld):
-    if is_date(tenor) and is_ts(yld):
-        return bond_years_to_maturity(yld, tenor)
-    else:
-        return tenor
         
 def bond_duration(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
     """
@@ -178,8 +139,9 @@ def bond_duration(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
     duration: number/array
         the duration of the bond
     """
-    rate_fmt = _rate_format(rate_fmt)
-    pv, duration = _bond_pv_and_duration(yld/rate_fmt, _tenor(tenor,yld), coupon = coupon/rate_fmt, freq = freq)    
+    rate_fmt = rate_format(rate_fmt)
+    tenor = years_to_maturity(tenor, yld)
+    pv, duration = _bond_pv_and_duration(yld/rate_fmt, tenor = tenor, coupon = coupon/rate_fmt, freq = freq)    
     return duration
 
 bond_duration.__doc__ = _bond_pv_and_duration.__doc__
@@ -285,12 +247,12 @@ def bond_yld_and_duration(price, tenor, coupon, freq = 2, iters = 5, rate_fmt = 
         DESCRIPTION.
 
     """
-    rate_fmt = _rate_format(rate_fmt)
-    tenor = _tenor(tenor, price)
+    rate_fmt = rate_format(rate_fmt)
+    tenor = years_to_maturity(tenor, price)
     if rate_fmt == 1:        
-        return _bond_yld_and_duration_(price, tenor, coupon = coupon, freq = freq, iters = iters)
+        return _bond_yld_and_duration_(price, tenor = tenor, coupon = coupon, freq = freq, iters = iters)
     else:
-        res = _bond_yld_and_duration_(price, tenor, coupon = coupon/rate_fmt, freq = freq, iters = iters)
+        res = _bond_yld_and_duration_(price, tenor = tenor, coupon = coupon/rate_fmt, freq = freq, iters = iters)
         res['yld'] *= rate_fmt
         return res
 
@@ -325,7 +287,7 @@ def bond_yld(price, tenor, coupon = None, freq = 2, iters = 5, rate_fmt = None):
         the yield of the bond
     """
 
-    rate_fmt = _rate_format(rate_fmt)
+    rate_fmt = rate_format(rate_fmt)
     if coupon is None:
         coupon = 0.06 * rate_fmt 
     return bond_yld_and_duration(price, tenor, coupon = coupon, freq = freq, iters = iters, rate_fmt = rate_fmt)['yld']
@@ -385,7 +347,7 @@ def bond_par_conversion_factor(yld, tenor, coupon = None, freq = 2, invert = Fal
     >>> [0.8985042974046984, 0.8884063695192392, 0.8790937290011396, 0.8704926716179342, 0.862538032755245]
     >>> print('if yields are higher than 6% cheapest to deliver is the 11-year par bond')
     """
-    rate_fmt = _rate_format(rate_fmt)
+    rate_fmt = rate_format(rate_fmt)
     if coupon is None:
         coupon = 0.06 * rate_fmt 
     res = bond_pv(coupon, tenor, coupon = yld, freq = freq, rate_fmt = rate_fmt)
@@ -428,7 +390,7 @@ def bond_ctd(tenor2yld, coupon = None, freq = 2, rate_fmt = None):
     >>> 2022-01-18  0.07     10  0.930763
 
     """
-    rate_fmt = _rate_format(rate_fmt)
+    rate_fmt = rate_format(rate_fmt)
     if coupon is None:
         coupon = 0.06 * rate_fmt 
     tenors = list(tenor2yld.keys())
@@ -451,245 +413,11 @@ def bond_total_return(price, coupon, funding, rate_fmt = 100):
     """
     price = pd.Series([1,np.nan,np.nan,2], [dt(-100),dt(-99),dt(-88), dt(0)])
     """
-    rate_fmt = _rate_format(rate_fmt)
+    rate_fmt = rate_format(rate_fmt)
     prc = nona(price)
     dcf = ts_gap(prc)/365. ## day count fraction, forward looking
     funding = df_reindex(funding, prc, method = ['ffil', 'bfill'])
     carry = df_reindex(shift(mul_(coupon - funding, dcf)), price) ## accruals less funding costs
     rtn = diff(price)
     return add_([rtn, (100/rate_fmt) * carry])
-    
-    
-def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt = 100, freq = 2, dirty_correction = True):
-    """
-    inflation linked bond clean price is quoted prior to notional multiplication and accrual
-    
-    So:
-        notional = cpi / base_cpi
-        carry = daily_accrual - daily_funding
-        MTM = notional * dirty price
-        change(dirty_price) = change(clean_price) + carry
-
-    Using the product rule:
-        
-        change(MTM) = change(notional * clean_price) + notional * carry + change(notional) * (dirty-clean)
-
-    We actually approximate it a little... as
-
-        change(MTM) = change(notional * clean_price) + notional * carry + change(notional) * AVG(dirty-clean)
-
-    since
-    
-        AVG(dirty-clean) = 0.5 * (coupon / freq) (it grows from 0 to coupon/freq before dropping back to 0)
-        
-    """
-    rate_fmt = _rate_format(rate_fmt)
-    mask = np.isnan(price)
-    prc = price[~mask]
-    dcf = ts_gap(prc)/365 ## day count fraction, forward looking
-    funding = df_reindex(funding, prc, method = ['ffil', 'bfill'])
-    notional = df_reindex(cpi / base_cpi, price, method = 'ffill')
-    notional[mask] = np.nan
-    if floor:
-        notional = np.maximum(floor, notional)
-    carry = df_reindex(shift(mul_([coupon - funding, dcf, notional])), price) ## ## accruals less funding costs on notional
-    pv = mul_(price, notional)
-    rtn = diff(pv)
-    if dirty_correction:
-        dirty_change_in_notional = diff(notional) * (coupon / (2 * freq))
-        return add_([rtn, (100/rate_fmt) * carry, dirty_change_in_notional])
-    else:
-        return add_([rtn, (100/rate_fmt) * carry])
-    
-
-@pd2np
-def _ilb_pv_and_durations(yld, cpi_yld, tenor, coupon, freq = 2):
-    """
-    
-    Given 
-    - yld by which we discount all cash flows,
-    - cpi_yld: the growth rate of cpi
-    and the usual tenor, coupon, freq defining the cash flows,
-    can we determine the pv of an ilb and its derivative wrt both yld and cpi_yld
-    
-
-    :Present Value calculation:
-    --------------------------
-    
-    There are n = freq * tenor periods
-    and a period discount factor, i.e.   
-
-    d = (1 + yld/freq) [so that paying a coupon of y/freq at end of period, would keep value constant at 1]
-
-    On the other hand, there is growth factor g = (1 + cpi_yld/freq) since we get paid based on growth of cpi
-
-    g = (1+cpi_yld/freq)
-
-    Let f = g / d
-
-    and let r = 1/(1-f)
-
-    just like a normal bond:
-        
-    coupons_pv = c f + c * f^2 + ... c * f ^ (freq * tenor)  
-               = c f * (1+f...+f^(n-1)) 
-               = c f * (1 - f^n) / (1 - f)  = c * f * (1-f^n) * r
-    notional_pv = f^n
-    
-    if yld == cpi_yld and f == 1 then...
-    pv = 1 + c * n # n coupons + notional
-    
-    :duration calculation:
-    --------------------------
-    we denote p = cpi_yld
-    df/dy = - 1/freq * g/d^2 = - f^2 / (freq * g)
-    df/dp = = 1/(freq * d) = f / (freq * g) 
-    
-    dr/dy = r^2 df/dy
-    dr/dp = r^2 df/dp
-    
-    
-    yield duration
-    ---------------
-    - dnotional/dy =  n f ^ (n-1) df/dy 
-    - dcoupons/dy = c * df/dy * [(1-f^n)*r - f * n f^n-1 *r + f * (1-f^n) * r^2]  # using the product rule
-                  = c * df/dy * r [(1-f^n) - n * f^n + f(1-f^n)*r]    
-
-    if yld == cpi_yld and f == 1 then..
-    
-    dnotional_dy = tenor
-    coupons_pv = c f + c * f^2 + ... c * f ^ (freq * tenor)  = c * f * (1+f...+f^(n-1)) 
-    dcoupon_dy/c = df/dy ( 1 + 2f + 3 f^2 ... + nf^(n-1)) 
-                 = df/fy (1+...n) # since f = 1
-                 = (1/g * freq) n(n+1)/2
-
-    cpi duration
-    ------------
-    The formula is identical, except we replace df/dy with df/dp so we just need to divide by -f
-    
-    
-    Example: ilb calculations match normal bond when cpi_yld = 0
-    ---------
-    >>> tenor = 10; coupon = 0.02; yld = 0.05; cpi_yld = 0.03; freq = 2
-    
-    >>> _ilb_pv_and_durations(yld = yld, cpi_yld = 0.00, tenor = tenor, coupon = coupon, freq = freq)
-    >>> (0.7661625657152991, 6.857403925710587, 6.690150171424962)
-    
-    >>> _bond_pv_and_duration(yld = yld, tenor = tenor, coupon = coupon, freq = freq)
-    >>> (0.7661625657152991, 6.690150171424962)
-
-    Example: ilb calculated duration is same as empirical one
-    ---------
-    >>> pv3, cpi3, yld3 = _ilb_pv_and_durations(yld = yld, cpi_yld = 0.03, tenor = tenor, coupon = coupon, freq = freq)
-    >>> pv301, cpi301, yld301 = _ilb_pv_and_durations(yld = yld, cpi_yld = 0.0301, tenor = tenor, coupon = coupon, freq = freq)
-    >>> 1e4 * (pv301 - pv3), 0.5*(cpi301 + cpi3)
-
-
-    """
-    n = tenor * freq
-    c = coupon / freq
-    d = (1 + yld / freq)
-    g = (1 + cpi_yld / freq)
-    if is_num(yld) and is_num(cpi_yld) and yld == cpi_yld:        
-        pv = 1 + n * c
-        yld_duration = n * (n + 1) / (2 * freq * g)
-        cpi_duration = yld_duration
-    
-    f = g / d
-    dfy = f**2 / (g * freq) ## we ignore the negative sign
-    dfp = f / (g * freq)
-    fn1 = f ** (n-1)    
-    r = 1 / (1 - f)
-    notional_pv = fn = fn1 * f
-    dnotional_dy = n * fn1 * dfy
-    dnotional_dp = n * fn1 * dfp
-    coupon_pv = c * f * (1 - fn) * r
-    pv = notional_pv + coupon_pv
-    dcoupon_dy = c * dfy * r * ((1 - fn)  - n * fn  + f * (1-fn) * r)
-    dcoupon_dp = c * dfp * r * ((1 - fn)  - n * fn  + f * (1-fn) * r)
-    yld_duration = dnotional_dy + dcoupon_dy
-    cpi_duration = dnotional_dp + dcoupon_dp
-    if isinstance(yld, (pd.Series, pd.DataFrame, np.ndarray)):
-        mask = f == 1
-        pv0 = 1 + n * c
-        duration0 = tenor + c*n*(n+1)/(2*freq*g)
-        pv[mask] = pv0 if is_num(pv0) else pv0[mask]
-        yld_duration[mask] = duration0 if is_num(duration0) else duration0[mask]
-        cpi_duration[mask] = duration0 if is_num(duration0) else duration0[mask]
-    return pv, cpi_duration, yld_duration
-
-def _ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, freq = 2, iters = 5, floor = 1):
-    """
-	
-    We calculate break-even yield for a bond, given its price, the yield of a normal government bond and tenor and coupons...	
-    We expect price to be quoted as per usual in market, i.e. 100 being par value. However, coupon and yield should be in fed actual values.
-
-    Parameters
-    ----------
-    price : float/array
-        price of bond
-    yld: float/array
-        The yield of a vanilla government bond, used as a reference for discounting cash flows
-    tenor : int
-        tenor of a bond.
-    coupon : float, optional
-        coupon of a bond. The default is 0.06.
-    freq : int, optional
-        number of coupon payments per year. The default is 2.
-    iters : int, optional
-        Number of iterations to find yield. The default is 5.
-
-    Returns
-    -------
-	returns a dict of the following keys:
-	
-    yld : number/array
-        the yield of the bond
-	duration: number/array 
-		the duration of the bond. Note that this is POSITIVE even though the dPrice/dYield is negative
-    """
-    px = price * np.maximum(cpi/base_cpi,floor) / 100
-    cpi_yld = 0
-    for _ in range(1+iters):
-        pv, cpi_duration, yld_duration = _ilb_pv_and_durations(yld, cpi_yld, tenor, coupon, freq = freq)
-        cpi_yld = cpi_yld + (px - pv) / cpi_duration
-    return dict(cpi_yld = cpi_yld, duration = cpi_duration)
-
-_ilb_cpi_yld_and_duration.output = ['cpi_yld', 'cpi_duration']
-
-def ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, freq = 2, iters = 5, floor = 1, rate_fmt = None):
-    """
-    calculates both cpi_yield and cpi_duration from a maturity date or a tenor
-
-    Parameters
-    ----------
-    price : float/array
-        price of bond
-    tenor: int, date, array
-        if a date, will calculate 
-    coupon : float, optional
-        coupon of a bond. The default is 0.06.
-    freq : int, optional
-        number of coupon payments per year. The default is 2.
-    iters : int, optional
-        Number of iterations to find yield. The default is 5.
-
-    Returns
-    -------
-    res : dict
-        cpi_yld and cpi_duration.
-
-    """
-    rate_fmt = _rate_format(rate_fmt)
-    tenor = _tenor(tenor, price)
-    if rate_fmt == 1:        
-        return _ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = cpi, base_cpi = base_cpi, freq = freq, iters = iters, floor = floor)
-    else:
-        res = _ilb_cpi_yld_and_duration(price = price, 
-                                        yld = yld/rate_fmt, tenor = tenor, coupon = coupon/rate_fmt, 
-                                        cpi = cpi, base_cpi = base_cpi, freq = freq, iters = iters, floor = floor)
-        res['cpi_yld'] *= rate_fmt
-        return res
-
-ilb_cpi_yld_and_duration.output = _ilb_cpi_yld_and_duration.output 
 
