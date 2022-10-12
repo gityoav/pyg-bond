@@ -2,16 +2,31 @@
 import numpy as np
 import pandas as pd
 from pyg_bond._base import rate_format, years_to_maturity
-from pyg_base import ts_gap, df_reindex, mul_, add_, pd2np, is_num, loop
+from pyg_base import dt, ts_gap, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, calendar, df_sync
 from pyg_timeseries import shift, diff
 
+
+def cpi_reindexed(cpi, ts):
+    """
+    august cpi is published in september and that return materializes over october to november
+    interestingly, this future growth is KNOWN so potentially, future back adjusted calculation is possible
+    """
+    if is_ts(cpi):
+        dates = [dt(dt(eom, 1), '2m') for eom in cpi.index]
+        if isinstance(cpi, pd.DataFrame):
+            res = pd.DataFrame(ts.values, index = dates, columns = ts.columns)
+        else:
+            res = pd.Series(ts.values, index = dates)
+        rtn = df_reindex(res, ts, method = 'linear')
+        return rtn
+    else:
+        return cpi
 
 def ilb_ratio(cpi, base_cpi = 1, floor = 1):
     ratio = cpi/base_cpi
     if floor:
         ratio = np.maximum(floor, ratio)
     return ratio
-
     
 def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt = 100, freq = 2, dirty_correction = True):
     """
@@ -210,7 +225,7 @@ def _ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, 
 
 _ilb_cpi_yld_and_duration.output = ['cpi_yld', 'cpi_duration', 'yld_duration']
 
-_ilb_cpi_yld_and_duration_ = loop(pd.DataFrame)(_ilb_cpi_yld_and_duration)
+_ilb_cpi_yld_and_duration_ = loop(pd.DataFrame, pd.Series)(_ilb_cpi_yld_and_duration)
 
 
 def ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, freq = 2, iters = 5, floor = 1, rate_fmt = None):
@@ -222,6 +237,8 @@ def ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, f
     ----------
     price : float/array
         price of bond
+    yld: float/array
+        yield of a NOMINAL bond with similar maturity
     tenor: int, date, array
         if a date, will calculate 
     coupon : float, optional
@@ -242,6 +259,8 @@ def ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, f
 
     """
     rate_fmt = rate_format(rate_fmt)
+    price, yld = df_sync([price, yld])
+    cpi = cpi_reindexed(cpi, price)
     tenor = years_to_maturity(tenor, price)
     if rate_fmt == 1:        
         return _ilb_cpi_yld_and_duration_(price, yld, tenor, coupon, cpi = cpi, base_cpi = base_cpi, freq = freq, iters = iters, floor = floor)
