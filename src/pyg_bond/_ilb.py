@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import pandas as pd
-from pyg_bond._base import rate_format, years_to_maturity
-from pyg_base import dt, drange, ts_gap, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, calendar, df_sync
+from pyg_bond._base import rate_format
+from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, calendar, df_sync
 from pyg_timeseries import shift, diff
 
 
@@ -423,7 +423,6 @@ def ilb_cpi_yld(price, nominal_yld, tenor, coupon, freq = 2, iters = 5, rate_fmt
         the yield of the bond
     """
 
-    rate_fmt = rate_format(rate_fmt)
     return ilb_cpi_yld_and_duration(price = price, nominal_yld = nominal_yld, 
                                     tenor = tenor, coupon = coupon, freq = freq, iters = iters, 
                                     rate_fmt = rate_fmt)['cpi_yld']

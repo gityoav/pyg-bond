@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
 import datetime
-from pyg_base import nona, is_num, pd2np, dt, df_reindex, loop, is_date, is_ts, ts_gap, mul_, add_
+from pyg_base import nona, is_num, years_to_maturity, pd2np, dt, df_reindex, loop, is_date, is_ts, ts_gap, mul_, add_
 from pyg_timeseries import shift, diff
-from pyg_bond._base import rate_format, years_to_maturity
+from pyg_bond._base import rate_format
 
 __all__ = ['bond_pv', 'bond_yld', 'bond_duration', 'bond_yld_and_duration']
 
