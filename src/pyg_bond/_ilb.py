@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 from pyg_bond._base import rate_format, years_to_maturity
-from pyg_base import dt, ts_gap, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, calendar, df_sync
+from pyg_base import dt, drange, ts_gap, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, calendar, df_sync
 from pyg_timeseries import shift, diff
 
 
@@ -12,12 +12,16 @@ def cpi_reindexed(cpi, ts):
     interestingly, this future growth is KNOWN so potentially, future back adjusted calculation is possible
     """
     if is_ts(cpi):
-        dates = [dt(dt(eom, 1), '2m') for eom in cpi.index]
+        cpi_eom = cpi.resample('m').last()
+        dates = [dt(dt(eom, 1), '2m') for eom in cpi_eom.index]
         if isinstance(cpi, pd.DataFrame):
-            res = pd.DataFrame(ts.values, index = dates, columns = ts.columns)
+            res = pd.DataFrame(cpi_eom.values, index = dates, columns = cpi_eom.columns)
         else:
-            res = pd.Series(ts.values, index = dates)
-        rtn = df_reindex(res, ts, method = 'linear')
+            res = pd.Series(cpi_eom.values, index = dates)
+        t0 = ts.index[0]
+        t1 = ts.index[-1]
+        extended_dates = drange(dt(t0.year, t0.month, 0), dt(t1.year, t1.month+1,0))
+        rtn = df_reindex(df_reindex(res, extended_dates, method = 'linear'), ts)
         return rtn
     else:
         return cpi
@@ -71,7 +75,7 @@ def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt 
     
 
 @pd2np
-def _ilb_pv_and_durations(yld, cpi_yld, tenor, coupon, freq = 2):
+def _ilb_pv_and_durations(nominal_yld, cpi_yld, tenor, coupon, freq = 2):
     """
     
     Given 
@@ -156,9 +160,9 @@ def _ilb_pv_and_durations(yld, cpi_yld, tenor, coupon, freq = 2):
     """
     n = tenor * freq
     c = coupon / freq
-    d = (1 + yld / freq)
+    d = (1 + nominal_yld / freq)
     g = (1 + cpi_yld / freq)
-    if is_num(yld) and is_num(cpi_yld) and yld == cpi_yld:        
+    if is_num(nominal_yld) and is_num(cpi_yld) and nominal_yld == cpi_yld:        
         pv = 1 + n * c
         yld_duration = n * (n + 1) / (2 * freq * g)
         cpi_duration = yld_duration
@@ -177,7 +181,7 @@ def _ilb_pv_and_durations(yld, cpi_yld, tenor, coupon, freq = 2):
     dcoupon_dp = c * dfp * r * ((1 - fn)  - n * fn  + f * (1-fn) * r)
     yld_duration = dnotional_dy + dcoupon_dy
     cpi_duration = dnotional_dp + dcoupon_dp
-    if isinstance(yld, (pd.Series, pd.DataFrame, np.ndarray)):
+    if isinstance(nominal_yld, (pd.Series, pd.DataFrame, np.ndarray)):
         mask = f == 1
         pv0 = 1 + n * c
         duration0 = tenor + c*n*(n+1)/(2*freq*g)
@@ -186,7 +190,125 @@ def _ilb_pv_and_durations(yld, cpi_yld, tenor, coupon, freq = 2):
         cpi_duration[mask] = duration0 if is_num(duration0) else duration0[mask]
     return pv, cpi_duration, yld_duration
 
-def _ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, freq = 2, iters = 5, floor = 1):
+
+def ilb_pv(nominal_yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = None):
+    """
+    Given 
+    - nominal_yld by which we discount all cash flows,
+    - cpi_yld: the growth rate of cpi
+    
+    and the usual tenor, coupon, freq defining the cash flows,
+    can we determine the pv of an ilb and its derivative wrt both yld and cpi_yld
+    
+    
+    Example:
+    --------
+    cpi_yld = ilb_cpi_yld(100, )
+        
+
+    :Present Value calculation:
+    --------------------------
+    
+    There are n = freq * tenor periods
+    and a period discount factor, i.e.   
+
+    d = (1 + nominal_yld/freq) [so that paying a coupon of y/freq at end of period, would keep value constant at 1]
+
+    On the other hand, there is growth factor g = (1 + cpi_yld/freq) since we get paid based on growth of cpi
+
+    g = (1+cpi_yld/freq)
+
+    Let f = g / d
+
+    and let r = 1/(1-f)
+
+    just like a normal bond:
+        
+    coupons_pv = c f + c * f^2 + ... c * f ^ (freq * tenor)  
+               = c f * (1+f...+f^(n-1)) 
+               = c f * (1 - f^n) / (1 - f)  = c * f * (1-f^n) * r
+    notional_pv = f^n
+    
+    if nominal_yld == cpi_yld and f == 1 then...
+    pv = 1 + c * n # n coupons + notional
+    
+    :duration calculation:
+    ----------------------
+    we denote p = cpi_yld and y = yld = nominal_yld
+    
+    f = g/d = (1+p/freq)/(1+y/freq)
+    df/dy = - 1/freq * g/d^2 = - f^2 / (freq * g)
+    df/dp =   1/(freq * d) = f / (freq * g) 
+    
+    dr/dy = r^2 df/dy
+    dr/dp = r^2 df/dp
+    
+    nominal yield duration
+    ---------------
+    - dnotional/dy =  n f ^ (n-1) df/dy 
+    - dcoupons/dy = c * df/dy * [(1-f^n)*r - f * n f^n-1 *r + f * (1-f^n) * r^2]  # using the product rule
+                  = c * df/dy * r [(1-f^n) - n * f^n + f(1-f^n)*r]    
+
+    if yld == cpi_yld and f == 1 then..
+    
+    dnotional_dy = tenor
+    coupons_pv = c f + c * f^2 + ... c * f ^ (freq * tenor)  = c * f * (1+f...+f^(n-1)) 
+    dcoupon_dy/c = df/dy ( 1 + 2f + 3 f^2 ... + nf^(n-1)) 
+                 = df/fy (1+...n) # since f = 1
+                 = (1/g * freq) n(n+1)/2
+
+    cpi duration
+    ------------
+    The formula is identical, except we replace df/dy with df/dp so we just need to divide by -f
+    
+    Example: ilb calculations match normal bond when cpi_yld = 0
+    ---------
+    >>> tenor = 10; coupon = 0.02; yld = 0.05; cpi_yld = 0.03; freq = 2
+    
+    >>> _ilb_pv_and_durations(yld = yld, cpi_yld = 0.00, tenor = tenor, coupon = coupon, freq = freq)
+    >>> (0.7661625657152991, 6.857403925710587, 6.690150171424962)
+    
+    >>> _bond_pv_and_duration(yld = yld, tenor = tenor, coupon = coupon, freq = freq)
+    >>> (0.7661625657152991, 6.690150171424962)
+
+    Example: ilb calculated duration is same as empirical one
+    ---------
+    >>> pv3, cpi3, yld3 = _ilb_pv_and_durations(yld = yld, cpi_yld = 0.03, tenor = tenor, coupon = coupon, freq = freq)
+    >>> pv301, cpi301, yld301 = _ilb_pv_and_durations(yld = yld, cpi_yld = 0.0301, tenor = tenor, coupon = coupon, freq = freq)
+    >>> 1e4 * (pv301 - pv3), 0.5*(cpi301 + cpi3)
+
+
+    """
+    rate_fmt = rate_format(rate_fmt)
+    nominal_yld, cpi_yld = df_sync([nominal_yld, cpi_yld])
+    if rate_fmt!=1:
+        nominal_yld, cpi_yld, coupon = nominal_yld/rate_fmt, cpi_yld/rate_fmt, coupon/rate_fmt 
+    tenor = years_to_maturity(tenor, cpi_yld)
+    pv, cpi_duration, yld_duration = _ilb_pv_and_durations(nominal_yld, cpi_yld, tenor = tenor, coupon = coupon, freq = freq)
+    px = pv * 100
+    return px
+    
+def ilb_yld_duration(nominal_yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = None):
+    rate_fmt = rate_format(rate_fmt)
+    nominal_yld, cpi_yld = df_sync([nominal_yld, cpi_yld])
+    if rate_fmt!=1:
+        nominal_yld, cpi_yld, coupon = nominal_yld/rate_fmt, cpi_yld/rate_fmt, coupon/rate_fmt 
+    tenor = years_to_maturity(tenor, cpi_yld)
+    pv, cpi_duration, yld_duration = _ilb_pv_and_durations(nominal_yld, cpi_yld, tenor = tenor, coupon = coupon, freq = freq)
+    return yld_duration
+    
+
+def ilb_cpi_duration(nominal_yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = None):
+    rate_fmt = rate_format(rate_fmt)
+    nominal_yld, cpi_yld = df_sync([nominal_yld, cpi_yld])
+    if rate_fmt!=1:
+        nominal_yld, cpi_yld, coupon = nominal_yld/rate_fmt, cpi_yld/rate_fmt, coupon/rate_fmt 
+    tenor = years_to_maturity(tenor, cpi_yld)
+    pv, cpi_duration, yld_duration = _ilb_pv_and_durations(nominal_yld, cpi_yld, tenor = tenor, coupon = coupon, freq = freq)
+    return cpi_duration
+
+
+def _ilb_cpi_yld_and_duration(price, nominal_yld, tenor, coupon, freq = 2, iters = 5):
     """
 	
     We calculate break-even yield for a bond, given its price, the yield of a normal government bond and tenor and coupons...	
@@ -195,8 +317,8 @@ def _ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, 
     Parameters
     ----------
     price : float/array
-        price of bond
-    yld: float/array
+        clean price of an inflation linked bond
+    nominal_yld: float/array
         The yield of a vanilla government bond, used as a reference for discounting cash flows
     tenor : int
         tenor of a bond.
@@ -216,10 +338,10 @@ def _ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, 
 	duration: number/array 
 		the duration of the bond. Note that this is POSITIVE even though the dPrice/dYield is negative
     """
-    px = price * np.maximum(cpi/base_cpi,floor) / 100
+    px = price /100
     cpi_yld = 0
     for _ in range(1+iters):
-        pv, cpi_duration, yld_duration = _ilb_pv_and_durations(yld, cpi_yld, tenor, coupon, freq = freq)
+        pv, cpi_duration, yld_duration = _ilb_pv_and_durations(nominal_yld, cpi_yld, tenor, coupon, freq = freq)
         cpi_yld = cpi_yld + (px - pv) / cpi_duration
     return dict(cpi_yld = cpi_yld, cpi_duration = cpi_duration, yld_duration = yld_duration)
 
@@ -228,7 +350,7 @@ _ilb_cpi_yld_and_duration.output = ['cpi_yld', 'cpi_duration', 'yld_duration']
 _ilb_cpi_yld_and_duration_ = loop(pd.DataFrame, pd.Series)(_ilb_cpi_yld_and_duration)
 
 
-def ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, freq = 2, iters = 5, floor = 1, rate_fmt = None):
+def ilb_cpi_yld_and_duration(price, nominal_yld, tenor, coupon, freq = 2, iters = 5, rate_fmt = None):
     """
     calculates both cpi_yield and cpi_duration from a maturity date or a tenor.
     cpi_yld is the breakeven yield inflation that matches the prices with vanilla bond.
@@ -237,7 +359,7 @@ def ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, f
     ----------
     price : float/array
         price of bond
-    yld: float/array
+    nominal_yld: float/array
         yield of a NOMINAL bond with similar maturity
     tenor: int, date, array
         if a date, will calculate 
@@ -255,26 +377,26 @@ def ilb_cpi_yld_and_duration(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, f
         
     Example:
     --------
-    ilb_cpi_yld_and_duration(84, yld = 0.04, tenor = 10, coupon = 0.01, cpi = 1.3, base_cpi = 1)
-
+    >>> cpi_yld = ilb_cpi_yld(84, nominal_yld = 0.04, tenor = 10, coupon = 0.01, cpi = 1.3, base_cpi = 1)
+    >>> px = ilb_pv(nominal_yld = 0.04, cpi_yld = res['cpi_yld'], tenor = 10, coupon = 0.01)
+    >>> assert abs(px-84)<1e-6
     """
     rate_fmt = rate_format(rate_fmt)
-    price, yld = df_sync([price, yld])
-    cpi = cpi_reindexed(cpi, price)
+    price, nominal_yld = df_sync([price, nominal_yld])
     tenor = years_to_maturity(tenor, price)
     if rate_fmt == 1:        
-        return _ilb_cpi_yld_and_duration_(price, yld, tenor, coupon, cpi = cpi, base_cpi = base_cpi, freq = freq, iters = iters, floor = floor)
+        return _ilb_cpi_yld_and_duration_(price, nominal_yld, tenor, coupon, freq = freq, iters = iters)
     else:
         res = _ilb_cpi_yld_and_duration_(price = price, 
-                                        yld = yld/rate_fmt, tenor = tenor, coupon = coupon/rate_fmt, 
-                                        cpi = cpi, base_cpi = base_cpi, freq = freq, iters = iters, floor = floor)
+                                        nominal_yld = nominal_yld/rate_fmt, tenor = tenor, coupon = coupon/rate_fmt, 
+                                        freq = freq, iters = iters)
         res['cpi_yld'] *= rate_fmt
         return res
 
 ilb_cpi_yld_and_duration.output = _ilb_cpi_yld_and_duration.output 
 
 
-def ilb_cpi_yld(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, freq = 2, iters = 5, rate_fmt = None, floor = 1):
+def ilb_cpi_yld(price, nominal_yld, tenor, coupon, freq = 2, iters = 5, rate_fmt = None):
     """
 	
 	bond_yld calculates yield from price iteratively using Newton Raphson gradient descent.
@@ -302,44 +424,10 @@ def ilb_cpi_yld(price, yld, tenor, coupon, cpi = 1, base_cpi = 1, freq = 2, iter
     """
 
     rate_fmt = rate_format(rate_fmt)
-    return ilb_cpi_yld_and_duration(price = price, yld = yld, cpi = cpi, base_cpi = base_cpi, floor = floor,
+    return ilb_cpi_yld_and_duration(price = price, nominal_yld = nominal_yld, 
                                     tenor = tenor, coupon = coupon, freq = freq, iters = iters, 
                                     rate_fmt = rate_fmt)['cpi_yld']
 
 
 
-def ilb_pv(yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = None):
-    """
-    
-    Calculates the bond present value given yield and coupon.
-    Returns par value as 1.
-    
-    :Example:
-    ---------
-    >>> assert abs(bond_pv(yld = 0.06, tenor = 10, coupon = 0.06, freq = 2) - 1) < 1e-6
 
-    Parameters
-    ----------
-    yld : float
-        yield in market for vanilla bond
-
-    cpi_yld: float
-        assumption about inflation growth
-    tenor : int
-        maturity of bond, e.g. tenor = 10 for a 10-year bond.
-    coupon : float, optional
-        Bond coupon. The default is 0.06.
-    freq : int, optional
-        number of coupon payments in a year. The default is 2.
-    rate_fmt : int, optional
-        is coupon/yield data provided as actual or as a %. The default is None, actual
-
-    Returns
-    -------
-    pv : float
-        Bond present value.
-
-    """
-    rate_fmt = rate_format(rate_fmt)
-    pv, cpi_duration, yld_duration = _ilb_pv_and_durations(yld, cpi_yld, tenor, coupon, freq = freq)
-    return pv
