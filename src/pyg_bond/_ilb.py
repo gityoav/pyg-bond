@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 from pyg_bond._base import rate_format
-from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, calendar, df_sync
+from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, is_arr, calendar, df_sync
 from pyg_timeseries import shift, diff
 
 
@@ -166,7 +166,10 @@ def _ilb_pv_and_durations(nominal_yld, cpi_yld, tenor, coupon, freq = 2):
         pv = 1 + n * c
         yld_duration = n * (n + 1) / (2 * freq * g)
         cpi_duration = yld_duration
-    
+    if is_arr(d):
+        d[d<=0] = np.nan
+    if is_arr(g):
+        g[g<=0] = np.nan
     f = g / d
     dfy = f**2 / (g * freq) ## we ignore the negative sign
     dfp = f / (g * freq)
