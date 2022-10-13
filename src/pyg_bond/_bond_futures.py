@@ -50,11 +50,11 @@ def aus_bond_pv(quote, tenor, coupon = 0.06, freq = 2, facevalue = 100):
     
     """
     yld = 1 - quote / 100
-    return facevalue * bond_pv(yld, tenor = tenor, coupon = coupon, freq = freq)
+    return facevalue * bond_pv(yld, tenor = tenor, coupon = coupon, freq = freq, rate_fmt = 1)
 
 
 
-def bond_par_conversion_factor(yld, tenor, coupon = None, freq = 2, invert = False, rate_fmt = None):
+def bond_par_conversion_factor(yld, tenor, coupon = None, freq = 2, invert = False, rate_fmt = 1):
     """
     This is an approximation, calculating the conversion factor for a par bond.
     We are given a yield curve (yld) and we construct a par bond. 
@@ -115,7 +115,7 @@ def bond_par_conversion_factor(yld, tenor, coupon = None, freq = 2, invert = Fal
     return 1/res if invert else res
 
 
-def bond_ctd(tenor2yld, coupon = None, freq = 2, rate_fmt = None):
+def bond_ctd(tenor2yld, coupon = None, freq = 2, rate_fmt = 1):
     """
     returns yld, tenor and future price of a CTD future with multiple yields
     
