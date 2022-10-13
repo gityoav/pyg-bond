@@ -53,8 +53,8 @@ def _bond_pv_and_duration(yld, tenor, coupon = 0.06, freq = 2):
         pv = 1 + n * c
         duration = tenor + c*n*(n+1)/(2*freq)
         return pv, duration
+    yld[yld<=-freq] = np.nan
     f = 1/(1 + yld/freq)
-    f[f<=0] = np.nan
     dfy = f**2 / freq ## we ignore the negative sign
     fn1 = f ** (n-1) 
     r = 1 / (1 - f)

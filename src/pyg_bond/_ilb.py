@@ -160,16 +160,20 @@ def _ilb_pv_and_durations(nominal_yld, cpi_yld, tenor, coupon, freq = 2):
     """
     n = tenor * freq
     c = coupon / freq
+    if is_arr(nominal_yld):
+        nominal_yld[nominal_yld<=-freq] = np.nan
+    elif nominal_yld<=-freq:
+        nominal_yld = np.nan
+    if is_arr(cpi_yld):
+        cpi_yld[cpi_yld<=-freq] = np.nan
+    elif cpi_yld<=-freq:
+        cpi_yld= np.nan
     d = (1 + nominal_yld / freq)
     g = (1 + cpi_yld / freq)
     if is_num(nominal_yld) and is_num(cpi_yld) and nominal_yld == cpi_yld:        
         pv = 1 + n * c
         yld_duration = n * (n + 1) / (2 * freq * g)
         cpi_duration = yld_duration
-    if is_arr(d):
-        d[d<=0] = np.nan
-    if is_arr(g):
-        g[g<=0] = np.nan
     f = g / d
     dfy = f**2 / (g * freq) ## we ignore the negative sign
     dfp = f / (g * freq)
