@@ -55,6 +55,7 @@ def _bond_pv_and_duration(yld, tenor, coupon = 0.06, freq = 2):
         return pv, duration
     yld[yld<=-freq] = np.nan
     f = 1/(1 + yld/freq)
+    f[f<=0] = np.nan
     dfy = f**2 / freq ## we ignore the negative sign
     fn1 = f ** (n-1) 
     r = 1 / (1 - f)
@@ -102,6 +103,7 @@ def bond_pv(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
 
     """
     rate_fmt = rate_format(rate_fmt)
+    tenor = years_to_maturity(tenor, yld)
     pv, duration = _bond_pv_and_duration(yld / rate_fmt, tenor, coupon = coupon / rate_fmt, freq = freq)
     return pv
 
@@ -169,6 +171,7 @@ def _bond_yld_and_duration(price, tenor, coupon = 0.06, freq = 2, iters = 5):
 		the duration of the bond. Note that this is POSITIVE even though the dPrice/dYield is negative
     """
     px = price/100
+    tenor = years_to_maturity(tenor, px)
     yld = ((1+tenor*coupon) - px)/tenor
     for _ in range(iters):
         pv, duration = _bond_pv_and_duration(yld, tenor, coupon = coupon, freq = freq)
@@ -205,7 +208,6 @@ def bond_yld_and_duration(price, tenor, coupon, freq = 2, iters = 5, rate_fmt = 
 
     """
     rate_fmt = rate_format(rate_fmt)
-    tenor = years_to_maturity(tenor, price)
     if rate_fmt == 1:        
         return _bond_yld_and_duration_(price, tenor = tenor, coupon = coupon, freq = freq, iters = iters)
     else:
