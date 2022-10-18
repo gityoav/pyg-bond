@@ -32,7 +32,8 @@ def ilb_ratio(cpi, base_cpi = 1, floor = 1):
         ratio = np.maximum(floor, ratio)
     return ratio
     
-def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt = 100, freq = 2, dirty_correction = True):
+def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt = 100, 
+                     freq = 2, dirty_correction = True):
     """
     inflation linked bond clean price is quoted prior to notional multiplication and accrual
     
@@ -47,24 +48,40 @@ def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt 
         change(MTM) = change(notional * clean_price) + notional * carry + change(notional) * (dirty-clean)
 
     We actually approximate it a little... as
-
         change(MTM) = change(notional * clean_price) + notional * carry + change(notional) * AVG(dirty-clean)
-
     since
-    
         AVG(dirty-clean) = 0.5 * (coupon / freq) (it grows from 0 to coupon/freq before dropping back to 0)
-        
+    
+    :Example:
+    ---------
+    >>> from pyg import * 
+    >>> coupon = 3
+    >>> funding = 1
+    >>> price = pd.Series([80, 80, np.nan] * 87 + [80], drange(2001,2002,'1b')) ##  
+    >>> rate_fmt = 100    
+    >>> base_cpi = floor = 1
+    >>> cpi = pd.Series(np.arange(1,2+1/261,1./261), drange(2001,2002,'1b'))
+    >>> tri = ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt = 100, dirty_correction = False)
+    
+    The total return in MTM is due to notional doubling due to inflation. 
+    Price remain constant so MTM going up from 80 to 160.
+    
+    Carry should be almost exactly: (3 - 0.8) * cpi.mean() == 3.3 ## 3% less funding of 80 at 1%
+    
+    >>>> assert (tri.sum() - 83.3)<1e-2
+    
+    
     """
     rate_fmt = rate_format(rate_fmt)
     mask = np.isnan(price)
     prc = price[~mask]
     dcf = ts_gap(prc)/365 ## day count fraction, forward looking
-    funding = df_reindex(funding, prc, method = ['ffil', 'bfill'])
     notional = df_reindex(cpi / base_cpi, price, method = 'ffill')
+    finance = (prc/100) * df_reindex(funding, prc, method = ['ffill', 'bfill'])
     notional[mask] = np.nan
     if floor:
         notional = np.maximum(floor, notional)
-    carry = df_reindex(shift(mul_([coupon - funding, dcf, notional])), price) ## ## accruals less funding costs on notional
+    carry = df_reindex(shift(mul_([coupon - finance, dcf, notional])), price) ## ## accruals less funding costs on notional
     pv = mul_(price, notional)
     rtn = diff(pv)
     if dirty_correction:

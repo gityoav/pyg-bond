@@ -255,12 +255,27 @@ def bond_yld(price, tenor, coupon = None, freq = 2, iters = 5, rate_fmt = None):
     
 def bond_total_return(price, coupon, funding, rate_fmt = 100):
     """
-    price = pd.Series([1,np.nan,np.nan,2], [dt(-100),dt(-99),dt(-88), dt(0)])
+    The bond total return is made of three aspects:
+        1) change in clean price
+        2) coupon accrual
+        3) cost of funding
+    
+    We make sure we observe carry only when price is available but that daycount calculation works
+    
+    :Example: constant price with nans, accrual of 3% less 1.3 * 1% cost of funding
+    -----------
+    >>> from pyg import * 
+    >>> coupon = 3
+    >>> funding = 1
+    >>> price = pd.Series([130, 130, np.nan] * 87 + [130], drange(2001,2002,'1b')) ##  
+    >>> rate_fmt = 100    
+    >>> assert (bond_total_return(price, coupon, funding, 100).sum() - 1.7) < 1e-6
+
     """
     rate_fmt = rate_format(rate_fmt)
     prc = nona(price)
     dcf = ts_gap(prc)/365. ## day count fraction, forward looking
-    funding = df_reindex(funding, prc, method = ['ffill', 'bfill'])
+    funding = (prc / 100) * df_reindex(funding, prc, method = ['ffill', 'bfill'])
     carry = df_reindex(shift(mul_(coupon - funding, dcf)), price) ## accruals less funding costs
     rtn = diff(price)
     return add_([rtn, (100/rate_fmt) * carry])
