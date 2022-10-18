@@ -260,7 +260,7 @@ def bond_total_return(price, coupon, funding, rate_fmt = 100):
     rate_fmt = rate_format(rate_fmt)
     prc = nona(price)
     dcf = ts_gap(prc)/365. ## day count fraction, forward looking
-    funding = df_reindex(funding, prc, method = ['fffil', 'bfill'])
+    funding = df_reindex(funding, prc, method = ['ffill', 'bfill'])
     carry = df_reindex(shift(mul_(coupon - funding, dcf)), price) ## accruals less funding costs
     rtn = diff(price)
     return add_([rtn, (100/rate_fmt) * carry])
