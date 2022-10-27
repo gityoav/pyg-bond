@@ -77,7 +77,7 @@ def bond_pv(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
     """
     
     Calculates the bond present value given yield and coupon.
-    Returns par value as 1.
+    Returns par value as 100.
     
     :Example:
     ---------
@@ -105,7 +105,7 @@ def bond_pv(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
     rate_fmt = rate_format(rate_fmt)
     tenor = years_to_maturity(tenor, yld)
     pv, duration = _bond_pv_and_duration(yld / rate_fmt, tenor, coupon = coupon / rate_fmt, freq = freq)
-    return pv
+    return 100 * pv
 
 bond_pv.__doc__ = _bond_pv_and_duration.__doc__
         
