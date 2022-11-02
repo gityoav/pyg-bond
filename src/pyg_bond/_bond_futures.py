@@ -10,6 +10,8 @@ def aus_bill_pv(quote, tenor = 90, facevalue = 100, daycount = 365):
     """
 	converts ausralian accepted bank bills quote as (100-yld) into a price.
     See https://www.asx.com.au/documents/products/ird-pricing-guide.pdf for full implementaion
+    >>> quote = 99
+    >>> aus_bill_pv(99)
     """
     yld = 1 - quote/100
     discount_factor = 1/(1 + tenor * yld / daycount)
@@ -18,7 +20,7 @@ def aus_bill_pv(quote, tenor = 90, facevalue = 100, daycount = 365):
 
 
 
-def aus_bond_pv(quote, tenor, coupon = 0.06, freq = 2, facevalue = 100):
+def aus_bond_pv(quote, tenor, coupon = 0.06):
     """
     
     Australian bond futures are quoted as 100-yield. Here we calculate their actual price. See:
@@ -50,7 +52,7 @@ def aus_bond_pv(quote, tenor, coupon = 0.06, freq = 2, facevalue = 100):
     
     """
     yld = 1 - quote / 100
-    return facevalue * bond_pv(yld, tenor = tenor, coupon = coupon, freq = freq, rate_fmt = 1)
+    return bond_pv(yld, tenor = tenor, coupon = coupon, freq = 2, rate_fmt = 1)
 
 
 
@@ -112,7 +114,7 @@ def bond_par_conversion_factor(yld, tenor, coupon = None, freq = 2, invert = Fal
     if coupon is None:
         coupon = 0.06 * rate_fmt 
     res = bond_pv(coupon, tenor, coupon = yld, freq = freq, rate_fmt = rate_fmt)
-    return 1/res if invert else res
+    return 100/res if invert else res
 
 
 def bond_ctd(tenor2yld, coupon = None, freq = 2, rate_fmt = 1):

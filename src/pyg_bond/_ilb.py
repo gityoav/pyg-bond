@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import pandas as pd
-from pyg_bond._base import rate_format
+from pyg_bond._base import rate_format, annual_freq
 from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, is_arr, calendar, df_sync
 from pyg_timeseries import shift, diff
 
@@ -32,7 +32,7 @@ def ilb_ratio(cpi, base_cpi = 1, floor = 1):
         ratio = np.maximum(floor, ratio)
     return ratio
     
-def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt = 100, 
+def ilb_total_return(price, coupon, funding, cpi, base_cpi = None, floor = 1, rate_fmt = 100, 
                      freq = 2, dirty_correction = True):
     """
     inflation linked bond clean price is quoted prior to notional multiplication and accrual
@@ -72,11 +72,15 @@ def ilb_total_return(price, coupon, funding, base_cpi, cpi, floor = 1, rate_fmt 
     
     
     """
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     mask = np.isnan(price)
     prc = price[~mask]
     dcf = ts_gap(prc)/365 ## day count fraction, forward looking
-    notional = df_reindex(cpi / base_cpi, price, method = 'ffill')
+    notional = df_reindex(cpi, price, method = 'ffill')
+    if base_cpi is None:
+        base_cpi = cpi[~np.isnan(cpi)].iloc[0]
+    notional = notional / base_cpi
     finance = (prc/100) * df_reindex(funding, prc, method = ['ffill', 'bfill'])
     notional[mask] = np.nan
     if floor:
@@ -303,6 +307,7 @@ def ilb_pv(nominal_yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = None):
 
 
     """
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     nominal_yld, cpi_yld = df_sync([nominal_yld, cpi_yld])
     if rate_fmt!=1:
@@ -313,6 +318,7 @@ def ilb_pv(nominal_yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = None):
     return px
     
 def ilb_yld_duration(nominal_yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = None):
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     nominal_yld, cpi_yld = df_sync([nominal_yld, cpi_yld])
     if rate_fmt!=1:
@@ -323,6 +329,7 @@ def ilb_yld_duration(nominal_yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = N
     
 
 def ilb_cpi_duration(nominal_yld, cpi_yld, tenor, coupon, freq = 2, rate_fmt = None):
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     nominal_yld, cpi_yld = df_sync([nominal_yld, cpi_yld])
     if rate_fmt!=1:
@@ -405,6 +412,7 @@ def ilb_cpi_yld_and_duration(price, nominal_yld, tenor, coupon, freq = 2, iters 
     >>> px = ilb_pv(nominal_yld = 0.04, cpi_yld = res['cpi_yld'], tenor = 10, coupon = 0.01)
     >>> assert abs(px-84)<1e-6
     """
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     price, nominal_yld = df_sync([price, nominal_yld])
     tenor = years_to_maturity(tenor, price)

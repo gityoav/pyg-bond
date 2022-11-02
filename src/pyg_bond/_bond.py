@@ -3,7 +3,7 @@ import pandas as pd
 import datetime
 from pyg_base import nona, is_num, years_to_maturity, pd2np, dt, df_reindex, loop, is_date, is_ts, ts_gap, mul_, add_
 from pyg_timeseries import shift, diff
-from pyg_bond._base import rate_format
+from pyg_bond._base import rate_format, annual_freq
 
 __all__ = ['bond_pv', 'bond_yld', 'bond_duration', 'bond_yld_and_duration']
 
@@ -53,9 +53,16 @@ def _bond_pv_and_duration(yld, tenor, coupon = 0.06, freq = 2):
         pv = 1 + n * c
         duration = tenor + c*n*(n+1)/(2*freq)
         return pv, duration
-    yld[yld<=-freq] = np.nan
-    f = 1/(1 + yld/freq)
-    f[f<=0] = np.nan
+    if isinstance(yld, (pd.Series, pd.DataFrame, np.ndarray)):
+        yld[yld<=-freq] = np.nan
+        f = 1/(1 + yld/freq)
+        f[f<=0] = np.nan
+    else:
+        if yld<=-freq:
+            yld = np.nan
+        f = 1/(1 + yld/freq)
+        if f<=0:
+            f = np.nan
     dfy = f**2 / freq ## we ignore the negative sign
     fn1 = f ** (n-1) 
     r = 1 / (1 - f)
@@ -72,6 +79,14 @@ def _bond_pv_and_duration(yld, tenor, coupon = 0.06, freq = 2):
         pv[mask] = pv0 if is_num(pv0) else pv0[mask]
         duration[mask] = duration0 if is_num(duration0) else duration0[mask]
     return pv, duration
+
+
+def bond_pv_and_duration(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
+    freq = annual_freq(freq)
+    rate_fmt = rate_format(rate_fmt)
+    pv, duration = _bond_pv_and_duration(yld / rate_fmt, tenor, coupon = coupon / rate_fmt, freq = freq)
+    return pv, duration
+
 
 def bond_pv(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
     """
@@ -102,6 +117,7 @@ def bond_pv(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
         Bond present value.
 
     """
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     tenor = years_to_maturity(tenor, yld)
     pv, duration = _bond_pv_and_duration(yld / rate_fmt, tenor, coupon = coupon / rate_fmt, freq = freq)
@@ -132,6 +148,7 @@ def bond_duration(yld, tenor, coupon = 0.06, freq = 2, rate_fmt = None):
     duration: number/array
         the duration of the bond
     """
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     tenor = years_to_maturity(tenor, yld)
     pv, duration = _bond_pv_and_duration(yld/rate_fmt, tenor = tenor, coupon = coupon/rate_fmt, freq = freq)    
@@ -207,6 +224,7 @@ def bond_yld_and_duration(price, tenor, coupon, freq = 2, iters = 5, rate_fmt = 
         DESCRIPTION.
 
     """
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     if rate_fmt == 1:        
         return _bond_yld_and_duration_(price, tenor = tenor, coupon = coupon, freq = freq, iters = iters)
@@ -246,6 +264,7 @@ def bond_yld(price, tenor, coupon = None, freq = 2, iters = 5, rate_fmt = None):
         the yield of the bond
     """
 
+    freq = annual_freq(freq)
     rate_fmt = rate_format(rate_fmt)
     if coupon is None:
         coupon = 0.06 * rate_fmt 

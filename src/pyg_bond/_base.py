@@ -11,5 +11,20 @@ def rate_format(rate_fmt = None):
         raise ValueError(f'rate format must be in {_rate_formats}')
     return _rate_formats[rate_fmt]
 
+def annual_freq(freq):
+    """
+    >>> assert annual_freq('6M') == 2
+    >>> assert annual_freq('360d') == 1
 
+    Parameters
+    ----------
+    freq : either integer or '6m'
+
+    """
+    if isinstance(freq, str):
+        freq = freq.lower()
+        print('freq is %s'%freq)
+        return int(round(dict(d = 365, m = 12, y = 1, q = 4, w = 52)[freq[-1]] / int(freq[:-1]),0))
+    else:
+        return freq
 
