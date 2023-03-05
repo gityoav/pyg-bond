@@ -299,3 +299,4 @@ def bond_total_return(price, coupon, funding, rate_fmt = 100):
     rtn = diff(price)
     return add_([rtn, (100/rate_fmt) * carry])
 
+
