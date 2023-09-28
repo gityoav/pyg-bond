@@ -6,14 +6,24 @@ from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, ad
 from pyg_timeseries import shift, diff
 
 
-def cpi_reindexed(cpi, ts):
+def cpi_reindexed(cpi, ts, gap = 1):
     """
+    Parameters
+    ----------
+    cpi: constant or a timeseries
+    ts: the timeseries on which we wish to evaluate the cpi values
+    gap: the gap (in months) between successive cpi indexes values
+    
+    For most cpi indices, index is published every month.
+    
     august cpi is published in september and that return materializes over october to november
     interestingly, this future growth is KNOWN so potentially, future back adjusted calculation is possible
+    
+    For Australia, months = 3
     """
     if is_ts(cpi):
-        cpi_eom = cpi.resample('m').last()
-        dates = [dt(dt(eom, 1), '2m') for eom in cpi_eom.index]
+        cpi_eom = cpi.resample(f'{gap}m').last()
+        dates = [dt(dt(eom, 1), f'{gap+1}m') for eom in cpi_eom.index]
         if isinstance(cpi, pd.DataFrame):
             res = pd.DataFrame(cpi_eom.values, index = dates, columns = cpi_eom.columns)
         else:
