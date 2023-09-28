@@ -43,7 +43,7 @@ def ilb_ratio(cpi, base_cpi = 1, floor = 1):
     return ratio
     
 def ilb_total_return(price, coupon, funding, cpi, base_cpi = None, floor = 1, rate_fmt = 100, 
-                     freq = 2, dirty_correction = True):
+                     freq = 2, dirty_correction = True, gap = 1):
     """
     inflation linked bond clean price is quoted prior to notional multiplication and accrual
     
@@ -87,9 +87,9 @@ def ilb_total_return(price, coupon, funding, cpi, base_cpi = None, floor = 1, ra
     mask = np.isnan(price)
     prc = price[~mask]
     dcf = ts_gap(prc)/365 ## day count fraction, forward looking
-    notional = df_reindex(cpi, price, method = 'ffill')
-    if base_cpi is None:
-        base_cpi = cpi[~np.isnan(cpi)].iloc[0]
+    notional = cpi_reindexed(cpi, ts = price, gap = gap)
+    if base_cpi is None or base_cpi == 0:
+        base_cpi = notional[~np.isnan(notional)].iloc[0]
     notional = notional / base_cpi
     finance = (prc/100) * df_reindex(funding, prc, method = ['ffill', 'bfill'])
     notional[mask] = np.nan
