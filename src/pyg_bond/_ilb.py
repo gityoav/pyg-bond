@@ -6,6 +6,7 @@ from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, ad
 from pyg_timeseries import shift, diff
 
 
+
 def cpi_reindexed(cpi, ts, gap = 1):
     """
     Parameters
@@ -22,6 +23,9 @@ def cpi_reindexed(cpi, ts, gap = 1):
     For Australia, months = 3
     """
     if is_ts(cpi):
+        gap = int(gap)
+        if gap == 0:
+            gap = 1 
         cpi_eom = cpi.resample(f'{gap}m').last()
         dates = [dt(dt(eom, 1), f'{gap+1}m') for eom in cpi_eom.index]
         if isinstance(cpi, pd.DataFrame):
