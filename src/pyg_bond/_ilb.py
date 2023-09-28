@@ -6,8 +6,32 @@ from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, ad
 from pyg_timeseries import shift, diff
 
 
+def observations_per_year(ts):
+    observations = len(ts)
+    if observations == 0:
+        return np.nan
+    days = (ts.index[-1] - ts.index[0]).days
+    if days == 0:
+        return np.nan
+    years = days / 365
+    f = observations / years
+    if f > 300:
+        return round(f / 365) * 365
+    elif f > 200:
+        return 252 ## business days in a year
+    elif f > 150:
+        return 182.5
+    elif f > 30:
+        return round(f/52,0) * 52 ## per week
+    elif f > 6:
+        return round(f/12,0) * 12
+    elif f >2:
+        return 4
+    else:
+        return 1
 
-def cpi_reindexed(cpi, ts, gap = 1):
+
+def cpi_reindexed(cpi, ts, gap = None):
     """
     Parameters
     ----------
@@ -23,9 +47,14 @@ def cpi_reindexed(cpi, ts, gap = 1):
     For Australia, months = 3
     """
     if is_ts(cpi):
-        gap = int(gap)
-        if gap == 0:
-            gap = 1 
+        if gap is None or gap == 0:
+            n = observations_per_year(cpi)
+            if n <= 12:
+                gap = int(12 /n)
+            else:
+                return df_reindex(cpi, ts, method = 'ffill')
+        else:
+            gap = int(gap)
         cpi_eom = cpi.resample(f'{gap}m').last()
         dates = [dt(dt(eom, 1), f'{gap+1}m') for eom in cpi_eom.index]
         if isinstance(cpi, pd.DataFrame):
@@ -47,7 +76,7 @@ def ilb_ratio(cpi, base_cpi = 1, floor = 1):
     return ratio
     
 def ilb_total_return(price, coupon, funding, cpi, base_cpi = None, floor = 1, rate_fmt = 100, 
-                     freq = 2, dirty_correction = True, gap = 1):
+                     freq = 2, dirty_correction = True, gap = None):
     """
     inflation linked bond clean price is quoted prior to notional multiplication and accrual
     
@@ -91,7 +120,7 @@ def ilb_total_return(price, coupon, funding, cpi, base_cpi = None, floor = 1, ra
     mask = np.isnan(price)
     prc = price[~mask]
     dcf = ts_gap(prc)/365 ## day count fraction, forward looking
-    notional = cpi_reindexed(cpi, ts = price, gap = gap)
+    notional = cpi_reindexed(cpi, ts = price, gap = gap)        
     if base_cpi is None or base_cpi == 0:
         base_cpi = notional[~np.isnan(notional)].iloc[0]
     notional = notional / base_cpi
