@@ -2,21 +2,24 @@
 import numpy as np
 import pandas as pd
 from pyg_bond._base import rate_format, annual_freq
-from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, is_arr, calendar, df_sync
+from pyg_base import dt, drange, ts_gap, years_to_maturity, df_reindex, mul_, add_, pd2np, is_num, loop, is_ts, is_arr, calendar, df_sync, DAY
 from pyg_timeseries import shift, diff
 
 
+
 def observations_per_year(ts):
-    observations = len(ts)
+    if not is_ts(ts):
+        return np.nan
+    observations = len(ts) - 1
     if observations == 0:
         return np.nan
     days = (ts.index[-1] - ts.index[0]).days
-    if days == 0:
+    if days < 1:
         return np.nan
     years = days / 365
     f = observations / years
     if f > 300:
-        return round(f / 365) * 365
+        return round(f/365,0) * 365
     elif f > 200:
         return 252 ## business days in a year
     elif f > 150:
@@ -30,6 +33,9 @@ def observations_per_year(ts):
     else:
         return 1
 
+
+def as_eom(date):
+    return dt(date.year, date.month+1, 0)
 
 def cpi_reindexed(cpi, ts, gap = None):
     """
@@ -45,24 +51,48 @@ def cpi_reindexed(cpi, ts, gap = None):
     interestingly, this future growth is KNOWN so potentially, future back adjusted calculation is possible
     
     For Australia, months = 3
+    
+    Example
+    -------
+    >>> from pyg import *
+    >>> cpi = pd.Series(range(82),[date - DAY for date in drange(dt(2003,4,1), dt(0), '3m')])
+    >>> ts = pd.Series(1, drange(-6999))
+    >>> cpi_reindexed(aucpi, ts)    
+    
+    2004-07-31     3.989130 ## aim from 3 in June
+    2004-08-01     4.000000
+    2004-08-02     4.010870
+    2004-08-03     4.021739
+    2004-08-04     4.032609
+       
+    2023-09-25    80.597826
+    2023-09-26    80.608696
+    2023-09-27    80.619565
+    2023-09-28    80.630435
+    2023-09-29    80.641304 ## aim towards 81 in November
+    
     """
     if is_ts(cpi):
+        n = observations_per_year(cpi)
         if gap is None or gap == 0:
-            n = observations_per_year(cpi)
             if n <= 12:
                 gap = int(12 /n)
             else:
                 return df_reindex(cpi, ts, method = 'ffill')
         else:
             gap = int(gap)
-        cpi_eom = cpi.resample(f'{gap}m').last()
-        dates = [dt(dt(eom, 1), f'{gap+1}m') for eom in cpi_eom.index]
+        if n > 12:
+            cpi_eom = cpi.resample(f'{gap}m').last()
+            dates = [dt(eom+DAY, f'{gap+1}m') for eom in cpi_eom.index]
+        else:
+            cpi_eom = cpi
+            dates = [dt(dt(eom.year, eom.month+1 , 1) if eom.month<12 else dt(eom.year+1, 1, 1), f'{gap+1}m') for eom in cpi_eom.index]
         if isinstance(cpi, pd.DataFrame):
             res = pd.DataFrame(cpi_eom.values, index = dates, columns = cpi_eom.columns)
         else:
             res = pd.Series(cpi_eom.values, index = dates)
-        t0 = ts.index[0]
-        t1 = ts.index[-1]
+        t0 = min(ts.index[0], res.index[0])
+        t1 = max(ts.index[-1], res.index[-1])
         extended_dates = drange(dt(t0.year, t0.month, 0), dt(t1.year, t1.month+1,0))
         rtn = df_reindex(df_reindex(res, extended_dates, method = 'linear'), ts)
         return rtn
