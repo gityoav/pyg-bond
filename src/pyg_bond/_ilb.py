@@ -37,7 +37,7 @@ def observations_per_year(ts):
 def as_eom(date):
     return dt(date.year, date.month+1, 0)
 
-def cpi_reindexed(cpi, ts, gap = None):
+def cpi_reindexed(cpi, ts, gap = None, days_to_settle = 2):
     """
     Parameters
     ----------
@@ -72,6 +72,8 @@ def cpi_reindexed(cpi, ts, gap = None):
     2023-09-29    80.641304 ## aim towards 81 in November
     
     """
+    if days_to_settle is None:
+        days_to_settle = 2
     if is_ts(cpi):
         n = observations_per_year(cpi)
         if gap is None or gap == 0:
@@ -86,7 +88,7 @@ def cpi_reindexed(cpi, ts, gap = None):
             dates = [dt(eom+DAY, f'{gap+1}m') for eom in cpi_eom.index]
         else:
             cpi_eom = cpi
-            dates = [dt(dt(eom.year, eom.month+1 , 1) if eom.month<12 else dt(eom.year+1, 1, 1), f'{gap+1}m') for eom in cpi_eom.index]
+            dates = [dt(dt(eom.year, eom.month+1 , 1) if eom.month<12 else dt(eom.year+1, 1, 1), f'{gap + 1}m') - days_to_settle*DAY for eom in cpi_eom.index]
         if isinstance(cpi, pd.DataFrame):
             res = pd.DataFrame(cpi_eom.values, index = dates, columns = cpi_eom.columns)
         else:
@@ -106,7 +108,7 @@ def ilb_ratio(cpi, base_cpi = 1, floor = 1):
     return ratio
     
 def ilb_total_return(price, coupon, funding, cpi, base_cpi = None, floor = 1, rate_fmt = 100, 
-                     freq = 2, dirty_correction = True, gap = None):
+                     freq = 2, dirty_correction = True, gap = None, days_to_settle = 1):
     """
     inflation linked bond clean price is quoted prior to notional multiplication and accrual
     
@@ -150,7 +152,7 @@ def ilb_total_return(price, coupon, funding, cpi, base_cpi = None, floor = 1, ra
     mask = np.isnan(price)
     prc = price[~mask]
     dcf = ts_gap(prc)/365 ## day count fraction, forward looking
-    notional = cpi_reindexed(cpi, ts = price, gap = gap)        
+    notional = cpi_reindexed(cpi, ts = price, gap = gap, days_to_settle = days_to_settle)
     if base_cpi is None or base_cpi == 0:
         base_cpi = notional[~np.isnan(notional)].iloc[0]
     notional = notional / base_cpi
